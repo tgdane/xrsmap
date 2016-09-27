@@ -5,13 +5,31 @@ import pyFAI.utils
 # Image manipulations
 # -----------------------------------------------------------------------------
 
+
 def maximum_projection(file_list):
-    """ """
+    """
+    Wrapper for pyFAI.utils.averageImages
+
+    Args:
+        file_list:
+
+    Returns:
+
+    """
     return average_images(file_list, filter="max")
 
 
 def average_images(file_list, filter="mean"):
-    """Wrapper for pyFAI.utils.averageImages"""
+    """
+    Wrapper for pyFAI.utils.averageImages
+
+    Args:
+        file_list:
+        filter:
+
+    Returns:
+
+    """
     return pyFAI.utils.averageImages(file_list, output=None, threshold=None, 
                                      minimum=None, maximum=None,
                                      darks=None, flats=None, filter_=filter, 
@@ -20,20 +38,49 @@ def average_images(file_list, filter="mean"):
 
 
 def rebin(data, binning, norm=False):
-    """Wrapper for pyFAI.utils.binning"""
+    """
+    Wrapper for pyFAI.utils.binning
+
+    Args:
+        data:
+        binning:
+        norm:
+
+    Returns:
+
+    """
     return pyFAI.utils.binning(data, binning, norm=norm)
 
 
-def cut_roi(data, roi):
-    """Cut a sector out of an array"""
+def extract_roi(data, roi):
+    """
+    Cut a sector out of an array
+
+    Args:
+        data:
+        roi:
+
+    Returns:
+
+    """
     return data[roi[0][0]:roi[1][0], roi[0][1]:roi[1][1]]
 
 
-def make_background(self, back_files, roi=None, binning=None):
-    """Create a background array"""
+def make_background(back_files, roi=None, binning=None):
+    """
+    Create a background array
+
+    Args:
+        back_files:
+        roi:
+        binning:
+
+    Returns:
+
+    """
     background = average_images(back_files)
     if roi is not None:
-        background = cut_roi(data, roi)
+        background = extract_roi(background, roi)
     if binning is not None:
         background = rebin(background, binning)
     return background.astype(np.float32)
@@ -44,9 +91,16 @@ def make_background(self, back_files, roi=None, binning=None):
 
 
 def indices_to_list(indices):
-    """Return an abbreviated string representing indices.
+    """
+    Return an abbreviated string representing indices.
     e.g. indices = [1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 15, 20]
          index_string = '1-3, 5-6, 8-13, 15, 20'
+
+    Args:
+        indices:
+
+    Returns:
+
     """
     index_string = ""
     end = start = indices[0]
@@ -67,9 +121,16 @@ def indices_to_list(indices):
 
 
 def list_to_indices(index_string):
-    """Return an integer list from a string representing indices.
+    """
+    Return an integer list from a string representing indices.
     e.g. index_string = '1-3, 5-6, 8-13, 15, 20'
          indices = [1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 15, 20]
+
+    Args:
+        index_string:
+
+    Returns:
+
     """
     indices = []
     for s in index_string.split(','):
@@ -82,8 +143,17 @@ def list_to_indices(index_string):
     return indices
 
 
-def get_filelist(dname, fname, numbers=None):
-    """ """
+def get_file_list(dname, fname, numbers=None):
+    """
+
+    Args:
+        dname:
+        fname:
+        numbers:
+
+    Returns:
+
+    """
     if not os.path.isdir(dname):
         raise IOError('Directory does not exist!\n{}'.format(dname))
     elif (numbers is None) and ('*' not in fname):

@@ -4,7 +4,7 @@ import fabio
 from . import utils
 
 
-class Composite(object):
+class Mapper(object):
     """
     Reconstruction of composite diffraction patterns and sum intensity maps
     from scanning X-ray scattering experiments.
@@ -185,7 +185,7 @@ class Composite(object):
         """
         data = fabio.open(frame).data.astype(np.float64)
         if self.roi is not None:
-            data = utils.cut_roi(data, self.roi)
+            data = utils.extract_roi(data, self.roi)
         if self.binning is not None:
             data = utils.rebin(data, self.binning)
         if self.background is not None:

@@ -7,7 +7,7 @@ try:
 except ImportError:
     print 'could not import utils'
 
-from . import composite
+from . import mapper
 
 COMPRESSED_FORMATS = ['bz2', 'gz']
 
@@ -29,7 +29,7 @@ def process(yaml_file):
         in_fname = input_dict['file_name']
         in_numbers = input_dict['numbers']
 
-        in_files = utils.get_filelist(in_dname, in_fname, in_numbers)
+        in_files = utils.get_file_list(in_dname, in_fname, in_numbers)
 
         if 'background' in yf.keys():
             back_dict = yf['background']
@@ -37,7 +37,7 @@ def process(yaml_file):
             bk_fname = back_dict['file_name']
             bk_numbers = back_dict['numbers']
 
-            back_files = utils.get_filelist(bk_dname, bk_fname, bk_numbers)
+            back_files = utils.get_file_list(bk_dname, bk_fname, bk_numbers)
         else:
             back_files = None
 
@@ -54,7 +54,7 @@ def process(yaml_file):
             comp_dict = proc_dict['composite']
             comp_dict['back_files'] = back_files
 
-            comp = composite.Composite(in_files, **comp_dict)
+            comp = mapper.Mapper(in_files, **comp_dict)
             out = comp.process(verbose=True)
             return out
 
