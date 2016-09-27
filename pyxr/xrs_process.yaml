@@ -1,0 +1,22 @@
+input:
+    directory: /Volumes/TD_SG_8Tb/ESRF/data/d_2015-03-13_blc-8995/EIGER_RECONSTRUCTED/BOOT_016_A_run_001/
+    file_name: a_series_28_accu_1_*.edf
+    numbers:
+
+background:
+    directory: /Volumes/TD_SG_8Tb/ESRF/data/d_2015-03-13_blc-8995/EIGER_RECONSTRUCTED/BOOT_016_A_run_001/
+    file_name: a_series_28_accu_1_0000.edf
+    numbers: 0-20
+
+# output:
+#     directory:
+#     file_name:
+#     numbers:
+
+process:
+     composite:
+        npt_x: 21
+        npt_y: 13
+        roi: [[568, 478],[1928, 1838]]
+        binning: 16
+        generate_sum_map: True
