@@ -54,13 +54,10 @@ def process(yaml_file):
             comp_dict = proc_dict['composite']
             comp_dict['back_files'] = back_files
 
-            mapr = mapper.Mapper(in_files, **comp_dict)
-            out = mapr.process(verbose=True)
+            mpr = mapper.Mapper(in_files, **comp_dict)
+            out = mpr.process(verbose=True)
             return out
 
 
 if __name__ == '__main__':
     process(sys.argv[1])
-
-
-
