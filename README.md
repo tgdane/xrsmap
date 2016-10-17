@@ -17,15 +17,15 @@ Example usage
     import xrsmap
     import matplotlib.pyplot as plt
 
-    file_list = # file list here
-    mesh_shape = (21, 13) # (y_axis, x_axis)
-    binning = 16 # rebinning factor
+    file_list =                     # file list here
+    mesh_shape = (21, 13)           # (y_axis, x_axis)
+    binning = 16                    # rebinning factor
     roi = ((568, 478),(1928, 1838)) # region-of-interest in detector image
-    back_files = # files to be averaged for background subtraction here
-    generate_sum_map = True # in addition to composite
+    back_files =                    # files to be averaged for background subtraction here
+    generate_sum_map = True         # in addition to composite
 
     mpr = xrsmap.Mapper(file_list, mesh_shape, binning=binning, roi=roi,
-                 back_files=back_files, generate_sum_map=True)
+                        back_files=back_files, generate_sum_map=True)
 
     composite, sum_map = mpr.process()
 ```
@@ -35,17 +35,17 @@ Example usage
 
 Installation
 ----
-In the near future, pygix will be available via PIP. In the meantime, download
+In the near future, xrsmap will be available via PIP. In the meantime, download
 the source code in .zip format from the github
-[repository](https://github.com/tgdane/pygix/archive/master.zip) and unpack it.
+[repository](https://github.com/tgdane/xrsmap/archive/master.zip) and unpack it.
 
 ```
-    unzip pygix-master.zip
+    unzip xrsmap-master.zip
 ```
 
-Go to the `pygix-master` directory, build and install the package:
+Go to the `xrsmap-master` directory, build and install the package:
 
 ```
-    cd pygix-master
+    cd xrsmap-master
     python setup.py build install
 ```
