@@ -146,6 +146,9 @@ def list_to_indices(index_string):
     return indices
 
 
+COMPRESSED_FORMATS = ['bz2', 'gz']
+
+
 def get_file_list(dname, fname, numbers=None):
     """
 

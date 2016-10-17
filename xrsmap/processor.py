@@ -9,8 +9,6 @@ except ImportError:
 
 from . import mapper
 
-COMPRESSED_FORMATS = ['bz2', 'gz']
-
 
 def process(yaml_file):
     """
