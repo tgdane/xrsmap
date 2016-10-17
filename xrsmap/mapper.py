@@ -215,7 +215,7 @@ class Mapper(object):
                 id_y, id_x = self.get_mesh_pos(i)
                 pos_y, pos_x = self.get_frame_coordinates(id_y, id_x)
                 self.composite_map[pos_y[0]:pos_y[1],
-                pos_x[0]:pos_x[1]] = frame_data
+                                   pos_x[0]:pos_x[1]] = frame_data
                 if self.do_sum:
                     sum_intensity = np.sum(frame_data)
                     self.sum_map[id_y, id_x] = sum_intensity

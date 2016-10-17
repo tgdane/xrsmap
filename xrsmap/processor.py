@@ -54,8 +54,8 @@ def process(yaml_file):
             comp_dict = proc_dict['composite']
             comp_dict['back_files'] = back_files
 
-            comp = mapper.Mapper(in_files, **comp_dict)
-            out = comp.process(verbose=True)
+            mapr = mapper.Mapper(in_files, **comp_dict)
+            out = mapr.process(verbose=True)
             return out
 
 
