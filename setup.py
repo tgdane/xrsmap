@@ -1,37 +1,8 @@
 #!/usr/bin/python
-# coding: utf8
-# /*##########################################################################
-#
-# Copyright (c) 2015-2016 European Synchrotron Radiation Facility
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-#
-# ###########################################################################*/
-
-__authors__ = ["Jérôme Kieffer", "Thomas Vincent"]
-__date__ = "18/03/2016"
-__license__ = "MIT"
-
 
 import sys
 import os
-import platform
+# import platform
 
 from numpy.distutils.misc_util import Configuration
 
@@ -46,7 +17,7 @@ except ImportError:
     from distutils.command.build_ext import build_ext
     from distutils.command.sdist import sdist
 
-PROJECT = "pygix"
+PROJECT = "xrsmap"
 cmdclass = {}
 
 
@@ -191,11 +162,11 @@ setup_requires = ["numpy"]
 setup_kwargs.update(
     name=PROJECT,
     version=get_version(),
-    url="https://github.com/tgdane/pygix",
+    url="https://github.com/tgdane/xrsmap",
     author="Thomas Dane",
     author_email="thomasgdane@gmail.com",
     classifiers=classifiers,
-    description="Software library for grazing-incidence/fibre X-Ray data analysis",
+    description="Software library for scanning X-ray scattering",
     long_description=get_readme(),
     install_requires=install_requires,
     setup_requires=setup_requires,
