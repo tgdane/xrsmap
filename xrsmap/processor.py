@@ -3,7 +3,6 @@ import yaml
 
 try:
     from . import utils
-    print utils
 except ImportError:
     print 'could not import utils'
 
