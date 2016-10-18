@@ -1,11 +1,7 @@
 import sys
 import yaml
 
-try:
-    from . import utils
-except ImportError:
-    print 'could not import utils'
-
+from . import io
 from . import mapper
 
 
@@ -26,7 +22,7 @@ def process(yaml_file):
         in_fname = input_dict['file_name']
         in_numbers = input_dict['numbers']
 
-        in_files = utils.get_file_list(in_dname, in_fname, in_numbers)
+        in_files = io.get_file_list(in_dname, in_fname, in_numbers)
 
         if 'background' in yf.keys():
             back_dict = yf['background']
@@ -34,7 +30,7 @@ def process(yaml_file):
             bk_fname = back_dict['file_name']
             bk_numbers = back_dict['numbers']
 
-            back_files = utils.get_file_list(bk_dname, bk_fname, bk_numbers)
+            back_files = io.get_file_list(bk_dname, bk_fname, bk_numbers)
         else:
             back_files = None
 
@@ -43,13 +39,13 @@ def process(yaml_file):
         else:
             mask = None
 
-        if 'output' in yf.keys():
-            out_dict = yf['output']
-            out_dname = out_dict['directory']
-            out_fname = out_dict['file_name']
-            out_numbers = out_dict['numbers']
-        else:
-            out_file = None
+        # if 'output' in yf.keys():
+        #     out_dict = yf['output']
+        #     out_dname = out_dict['directory']
+        #     out_fname = out_dict['file_name']
+        #     out_numbers = out_dict['numbers']
+        # else:
+        #     out_file = None
 
         proc = yf['process']
         process_dict = {}

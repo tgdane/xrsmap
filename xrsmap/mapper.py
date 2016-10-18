@@ -4,6 +4,7 @@ import time
 from . import utils
 from . import io
 
+
 class Mapper(object):
     """
     Reconstruction of composite diffraction patterns and sum intensity maps
@@ -158,6 +159,26 @@ class Mapper(object):
                 self.background[np.where(self.mask)] = self.dummy
         else:
             self.background = None
+
+    def make_background(self, back_files):
+        """
+        Args:
+            back_files (str or list): files for background
+        """
+        if back_files.__class__ is list:
+            bg = utils.average_images(back_files)
+        elif back_files.__class__ is str:
+            bg = io.load(back_files)
+        elif back_files.__class__ is np.ndarray:
+            bg = back_files
+
+        if self.dark is not None:
+            bg -= self.dark
+        if self.flat is not None:
+            bg /= self.flat
+        if self.mask is not None:
+            bg[np.where(self.mask)] = self.dummy
+        self.background = bg
 
     def get_mesh_pos(self, linear_idx):
         """
