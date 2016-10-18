@@ -2,7 +2,7 @@ import numpy as np
 import fabio
 
 from . import utils
-
+from .io import load as load
 
 class Mapper(object):
     """
@@ -73,7 +73,8 @@ class Mapper(object):
     """
 
     def __init__(self, file_list, mesh_shape, binning=None, roi=None,
-                 back_files=None, norm_array=None, out_basename=None,
+                 back_files=None, mask=None, dummy=0, flat=None, dark=None,
+                 norm_array=None, out_basename=None,
                  generate_sum_map=True):
         """
         Initialisation of the class. All parameters for the processing can be
@@ -88,6 +89,11 @@ class Mapper(object):
             back_files (string or list): list of files to be averaged to
                 generated a background image. This will be subtracted from all
                 data images.
+            mask (str or np.ndarray): path to or array containing mask.
+            flat (str, list or np.ndarray): path, list of paths or array of
+                flat field data. If list is passed, all files will be averaged.
+            dark (str, list or np.ndarray): path, list of paths or array of
+                dark field data. If list is passed, all files will be averaged.
             norm_array (ndarray): Array of same length as input file list
                 containing normalization values, e.g., incident flux.
             out_basename (string): base name for saving reconstructed data.
@@ -103,7 +109,7 @@ class Mapper(object):
         self.indices_x = ind_x.ravel()
 
         if (roi is None) and (binning is not None):
-            data_shape = fabio.open(file_list[0]).data.shape
+            data_shape = load(file_list[0]).shape
             bin_factor = (binning, binning)
             if any(i % j != 0 for i, j in zip(data_shape, bin_factor)):
                 roi = ((0, (data_shape[0] // 2) * 2),
@@ -127,14 +133,37 @@ class Mapper(object):
         self.do_sum = generate_sum_map
         if self.do_sum:
             self.sum_map = np.zeros(self.mesh_shape)
-        if back_files is not None:
-            self.background = utils.make_background(back_files, self.roi,
-                                                    self.binning)
-        else:
-            self.background = None
 
         self.norm_array = norm_array
         self.out_basename = out_basename
+
+        if mask.__class__ is str:
+            mask = load(mask, dtype=int)
+        self.mask = mask
+        self.dummy = dummy
+
+        if flat.__class__ is list:
+            flat = utils.average_images(flat)
+        elif flat.__class__ is str:
+            flat = load(flat)
+        self.flat = flat
+
+        if dark.__class__ is list:
+            dark = utils.average_images(dark)
+        elif dark.__class__ is str:
+            dark = load(flat)
+        self.dark = dark
+
+        if back_files is not None:
+            self.background = utils.average_images(back_files)
+            if self.dark is not None:
+                self.background -= self.dark
+            if self.flat is not None:
+                self.background /= self.flat
+            if self.mask is not None:
+                self.background[np.where(self.mask)] = self.dummy
+        else:
+            self.background = None
 
     def get_mesh_pos(self, linear_idx):
         """
@@ -171,25 +200,30 @@ class Mapper(object):
         end_x = start_x + len_x
         return (start_y, end_y), (start_x, end_x)
 
-    def pre_process_frame(self, frame):
+    def pre_process_frame(self, data):
         """
         Process a single frame. ROI will be used if used in the creation of the
         class, re-binned if binning is provided, background will be subtracted
         if background subtraction is chosen.
 
         Args:
-            frame (string): filename of image to process.
+            data (np.ndarray): filename of image to process.
 
         Returns:
             data (ndarray): processed framed data.
         """
-        data = fabio.open(frame).data.astype(np.float64)
+        if self.dark is not None:
+            data -= self.dark
+        if self.flat is not None:
+            data /= self.flat
+        if self.mask is not None:
+            data[np.where(self.mask)] = self.dummy
+        if self.background is not None:
+            data -= self.background
         if self.roi is not None:
             data = utils.extract_roi(data, self.roi)
         if self.binning is not None:
             data = utils.rebin(data, self.binning)
-        if self.background is not None:
-            data -= self.background
         return data
 
     def process(self, verbose=True):
@@ -210,15 +244,17 @@ class Mapper(object):
             for i, f in enumerate(self.file_list):
                 if verbose:
                     print f
-                frame_data = self.pre_process_frame(f)
+                data = load(f)
+                data = self.pre_process_frame(data)
 
                 id_y, id_x = self.get_mesh_pos(i)
                 pos_y, pos_x = self.get_frame_coordinates(id_y, id_x)
-                self.composite_map[pos_y[0]:pos_y[1],
-                                   pos_x[0]:pos_x[1]] = frame_data
+                self.composite_map[pos_y[0]:pos_y[1], pos_x[0]:pos_x[1]] = data
+
                 if self.do_sum:
-                    sum_intensity = np.sum(frame_data)
+                    sum_intensity = np.sum(data)
                     self.sum_map[id_y, id_x] = sum_intensity
+
         except KeyboardInterrupt:
             print '\nInterrupted.\n'
             pass

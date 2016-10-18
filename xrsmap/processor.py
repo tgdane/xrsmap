@@ -38,6 +38,11 @@ def process(yaml_file):
         else:
             back_files = None
 
+        if 'mask' in yf.keys():
+            mask = yf['mask']
+        else:
+            mask = None
+
         if 'output' in yf.keys():
             out_dict = yf['output']
             out_dname = out_dict['directory']
@@ -50,6 +55,7 @@ def process(yaml_file):
         if 'composite' in proc_dict.keys():
             comp_dict = proc_dict['composite']
             comp_dict['back_files'] = back_files
+            comp_dict['mask'] = mask
 
             mpr = mapper.Mapper(in_files, **comp_dict)
             out = mpr.process(verbose=True)

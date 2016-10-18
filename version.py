@@ -9,7 +9,7 @@ _version_info = namedtuple(
 
 MAJOR = 0
 MINOR = 1
-MICRO = 0
+MICRO = 1
 RELEV = "dev"  # <16
 SERIAL = 0  # <16
 
