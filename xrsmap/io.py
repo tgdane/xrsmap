@@ -1,6 +1,7 @@
 import os
 import glob
 import numpy as np
+from collections import OrderedDict
 import fabio
 
 
@@ -18,6 +19,101 @@ def load(filename, dtype=np.float64):
 
 
 COMPRESSED_FORMATS = ['bz2', 'gz']
+
+
+class Writer(object):
+    """
+
+    """
+    def __init__(self, mpr, filename):
+        """
+
+        Args:
+            mpr:
+            filename:
+
+        Returns:
+
+        """
+        self.mpr = mpr
+        self.hdr_dict = None
+        self.header = None
+        self.filename = filename
+
+    def make_header_dict(self, mode):
+        """Generate an OrderedDict of header entries.
+
+        Args:
+            mode (str): type of image.
+
+        Returns:
+            hdr_dict (OrderedDict): header dictionary.
+        """
+        if self.hdr_dict is None:
+            hdr_dict = OrderedDict()
+
+            mpr = self.mpr
+
+            hdr_dict['=== Composite info ==='] = ''
+            hdr_dict['Mesh shape'] = mpr.mesh_shape
+            hdr_dict['ROI'] = mpr.roi
+            hdr_dict['Binning'] = mpr.binning
+
+            if mode == 'composite':
+                hdr_dict['Frame shape'] = mpr.frame_shape
+                hdr_dict['Composite shape'] = mpr.composite_shape
+        self.hdr_dict = hdr_dict
+        return self.hdr_dict
+
+    def make_header_string(self, header_dict=None, mode='composite',
+                           hdr_key='#'):
+        """Turns the header dictionary into a string for writing to header.
+
+        Args:
+            header_dict (OrderedDict): optional passing of dictionary.
+            mode (str): type of image, e.g. composite.
+            hdr_key (str): key to be written before each header entry.
+
+        Returns:
+            header_string (str): string of header.
+        """
+        if (header_dict is None) and (self.hdr_dict is None):
+            self.make_header_dict(mode)
+        if header_dict is None:
+            header_dict = self.hdr_dict
+
+        hdr_list = []
+        for k, v in header_dict.items():
+            if (v.__class__ is str) and (len(v) is 0):
+                hdr_list.append(k)
+            else:
+                hdr_list.append('{}: {}'.format(k, v))
+        return '\n'.join(['{} {}'.format(hdr_key, i) for i in hdr_list])
+
+    def save(self, filename, data, mode, hdr_note=None):
+        """Main save function.
+
+        Args:
+            filename:
+            data:
+            mode:
+            hdr_note:
+
+        Returns:
+
+        """
+        if self.hdr_dict is None:
+            self.make_header_dict(mode)
+
+        header = self.hdr_dict
+        if hdr_note is not None:
+            header['Note:'] = hdr_note
+        try:
+            img = fabio.edfimage.edfimage(data=data.astype("float32"),
+                                          header=header)
+            img.write(filename)
+        except IOError:
+            print 'IOError while writing {}'.format(filename)
 
 
 def get_file_list(dname, fname, numbers=None, check_list=True):

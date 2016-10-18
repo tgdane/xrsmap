@@ -35,6 +35,24 @@ def init_pyfai(ponifile, mask=None, flat=None, dark=None):
             ai.darkfiles = dark
         elif flat.__class__ is np.ndarray:
             ai.darkfield = dark
-
     return ai
 
+
+def integrate1d(ai, data, npt, radial_range=None, azimuth_range=None,
+                method='lut', **kwargs):
+    """
+
+    Args:
+        ai:
+        data:
+        npt:
+        radial_range:
+        azimuth_range:
+        **kwargs:
+
+    Returns:
+
+    """
+    out = ai.integrate1d(data, npt, radial_range=radial_range,
+                         azimuth_range=azimuth_range, method=method, **kwargs)
+    return out

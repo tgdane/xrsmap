@@ -122,11 +122,11 @@ class Mapper(object):
         if self.binning is not None:
             frame_y /= self.binning
             frame_x /= self.binning
-
+        
         self.frame_shape = (frame_y, frame_x)
 
-        composite_shape = (frame_y * self.npt_y, frame_x * self.npt_x)
-        self.composite_map = np.zeros(composite_shape)
+        self.composite_shape = (frame_y * self.npt_y, frame_x * self.npt_x)
+        self.composite_map = np.zeros(self.composite_shape)
         self.sum_map = np.zeros(self.mesh_shape)
 
         self.norm_array = norm_array
@@ -241,13 +241,43 @@ class Mapper(object):
             data = utils.rebin(data, self.binning)
         return data
 
-    def process(self, do_composite=True, do_sum=True, verbose=True):
+    def save(self, basename=None):
+        """Save all stored arrays.
+
+        Args:
+            basename (str):
+
+        Returns:
+
+        """
+        if not basename:
+            return
+
+        if basename[-1] not in ['_', '-']:
+            basename += '_'
+        fname_fmt = '{}{}.edf'
+
+        if self.composite_map is not None:
+            mode = 'composite'
+            filename = fname_fmt.format(basename, mode)
+            writer = io.Writer(self, None)
+            writer.save(filename, self.composite_map, mode)
+
+        if self.sum_map is not None:
+            mode = 'sum_map'
+            filename = fname_fmt.format(basename, mode)
+            writer = io.Writer(self, None)
+            writer.save(filename, self.sum_map, mode)
+
+    def process(self, do_composite=True, do_sum=True,
+                basename=None, verbose=True):
         """
         Main processing function.
 
         Args:
             do_composite (bool): create the reconstructed image.
             do_sum (bool):
+            basename (str):
             verbose (bool): will print the filenames during processing.
 
         Returns:
@@ -288,6 +318,8 @@ class Mapper(object):
         if verbose:
             print '{} frames processed in {}'.format(i, t.pretty_print(dt))
             print '{} per frame'.format(t.pretty_print(dt/i))
+
+        self.save(basename)
 
         out = []
         if do_composite:
