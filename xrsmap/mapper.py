@@ -1,8 +1,8 @@
 import numpy as np
-import fabio
+import time
 
 from . import utils
-from .io import load as load
+from . import io
 
 class Mapper(object):
     """
@@ -74,8 +74,7 @@ class Mapper(object):
 
     def __init__(self, file_list, mesh_shape, binning=None, roi=None,
                  back_files=None, mask=None, dummy=0, flat=None, dark=None,
-                 norm_array=None, out_basename=None,
-                 generate_sum_map=True):
+                 norm_array=None, out_basename=None):
         """
         Initialisation of the class. All parameters for the processing can be
         passed directly here during the creation of the class instance.
@@ -97,8 +96,6 @@ class Mapper(object):
             norm_array (ndarray): Array of same length as input file list
                 containing normalization values, e.g., incident flux.
             out_basename (string): base name for saving reconstructed data.
-            generate_sum_map (bool): in addition to reconstructing the
-                diffraction composite, also calculate sum intensity composite.
         """
         self.file_list = file_list
         self.npt_y = mesh_shape[0]
@@ -109,7 +106,7 @@ class Mapper(object):
         self.indices_x = ind_x.ravel()
 
         if (roi is None) and (binning is not None):
-            data_shape = load(file_list[0]).shape
+            data_shape = io.load(file_list[0]).shape
             bin_factor = (binning, binning)
             if any(i % j != 0 for i, j in zip(data_shape, bin_factor)):
                 roi = ((0, (data_shape[0] // 2) * 2),
@@ -129,29 +126,26 @@ class Mapper(object):
 
         composite_shape = (frame_y * self.npt_y, frame_x * self.npt_x)
         self.composite_map = np.zeros(composite_shape)
-
-        self.do_sum = generate_sum_map
-        if self.do_sum:
-            self.sum_map = np.zeros(self.mesh_shape)
+        self.sum_map = np.zeros(self.mesh_shape)
 
         self.norm_array = norm_array
         self.out_basename = out_basename
 
         if mask.__class__ is str:
-            mask = load(mask, dtype=int)
+            mask = io.load(mask, dtype=int)
         self.mask = mask
         self.dummy = dummy
 
         if flat.__class__ is list:
             flat = utils.average_images(flat)
         elif flat.__class__ is str:
-            flat = load(flat)
+            flat = io.load(flat)
         self.flat = flat
 
         if dark.__class__ is list:
             dark = utils.average_images(dark)
         elif dark.__class__ is str:
-            dark = load(flat)
+            dark = io.load(flat)
         self.dark = dark
 
         if back_files is not None:
@@ -226,11 +220,13 @@ class Mapper(object):
             data = utils.rebin(data, self.binning)
         return data
 
-    def process(self, verbose=True):
+    def process(self, do_composite=True, do_sum=True, verbose=True):
         """
         Main processing function.
 
         Args:
+            do_composite (bool): create the reconstructed image.
+            do_sum (bool):
             verbose (bool): will print the filenames during processing.
 
         Returns:
@@ -241,25 +237,75 @@ class Mapper(object):
                 pixel corresponds to sum diffraction intensity of given roi.
         """
         try:
+            t = Timer()
+            t.start()
+
             for i, f in enumerate(self.file_list):
                 if verbose:
-                    print f
-                data = load(f)
-                data = self.pre_process_frame(data)
+                    print 'Processing: ...{}'.format(f[-60:])
 
-                id_y, id_x = self.get_mesh_pos(i)
-                pos_y, pos_x = self.get_frame_coordinates(id_y, id_x)
-                self.composite_map[pos_y[0]:pos_y[1], pos_x[0]:pos_x[1]] = data
+                data = io.load(f)
 
-                if self.do_sum:
-                    sum_intensity = np.sum(data)
+                if do_composite or do_sum:
+                    frame_data = self.pre_process_frame(data)
+                    id_y, id_x = self.get_mesh_pos(i)
+
+                if do_composite:
+                    pos_y, pos_x = self.get_frame_coordinates(id_y, id_x)
+                    self.composite_map[pos_y[0]:pos_y[1],
+                                       pos_x[0]:pos_x[1]] = frame_data
+
+                if do_sum:
+                    sum_intensity = np.sum(frame_data)
                     self.sum_map[id_y, id_x] = sum_intensity
 
         except KeyboardInterrupt:
             print '\nInterrupted.\n'
             pass
 
-        if self.do_sum:
-            return self.composite_map, self.sum_map
+        dt = t.stop()
+        if verbose:
+            print '{} frames processed in {}'.format(i, t.pretty_print(dt))
+            print '{} per frame'.format(t.pretty_print(dt/i))
+
+        out = []
+        if do_composite:
+            out.append(self.composite_map)
+        if do_sum:
+            out.append(self.sum_map)
+        return out
+
+
+class Timer(object):
+    def __init__(self):
+        self.t0 = None
+        self.t1 = None
+        self.dt = None
+
+    def start(self):
+        self.t0 = time.time()
+
+    def stop(self):
+        self.t1 = time.time()
+        self.dt = self.t1 - self.t0
+        return self.dt
+
+    @staticmethod
+    def pretty_print(dt):
+        if dt > 60:
+            m, s = divmod(dt, 60)
+            if m >= 60:
+                h, m = divmod(m, 60)
+                print h, m, s
+                fmt = '{:g} hours {:g} minutes {:.2f} seconds'.format(h, m, s)
+            else:
+                fmt = '{:g} minutes {:.2f} seconds'.format(m, s)
         else:
-            return self.composite_map
+            if dt < 0.001:
+                fmt = '{:.3f} us'.format(dt * 1e6)
+            elif dt < 1:
+                fmt = '{:.3f} ms'.format(dt * 1e3)
+            else:
+                fmt = '{:.3f} s'.format(dt)
+        return fmt
+

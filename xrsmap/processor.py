@@ -51,15 +51,21 @@ def process(yaml_file):
         else:
             out_file = None
 
-        proc_dict = yf['process']
-        if 'composite' in proc_dict.keys():
-            comp_dict = proc_dict['composite']
+        proc = yf['process']
+        process_dict = {}
+        if 'do_composite' in proc.keys():
+            comp_dict = proc['do_composite']
             comp_dict['back_files'] = back_files
             comp_dict['mask'] = mask
+            process_dict['do_composite'] = True
+        if 'do_sum' in proc.keys():
+            process_dict['do_sum'] = True
+        if 'verbose' in proc.keys():
+            process_dict['verbose'] = True
 
-            mpr = mapper.Mapper(in_files, **comp_dict)
-            out = mpr.process(verbose=True)
-            return out
+        mpr = mapper.Mapper(in_files, **comp_dict)
+        out = mpr.process(**process_dict)
+        return out
 
 
 if __name__ == '__main__':

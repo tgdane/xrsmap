@@ -17,17 +17,18 @@ Example usage
     import xrsmap
     import matplotlib.pyplot as plt
 
-    file_list =                     # file list here
-    mesh_shape = (21, 13)           # (y_axis, x_axis)
+    in_files =                      # input images
+    back_files =                    # background images
+    mask_file =                     # mask file
+    
+    mesh_shape = (13, 21)           # (y_axis, x_axis)
     binning = 16                    # rebinning factor
     roi = ((568, 478),(1928, 1838)) # region-of-interest in detector image
-    back_files =                    # files to be averaged for background subtraction here
-    generate_sum_map = True         # in addition to composite
 
-    mpr = xrsmap.Mapper(file_list, mesh_shape, binning=binning, roi=roi,
-                        back_files=back_files, generate_sum_map=True)
+    mpr = xrsmap.Mapper(in_files, mesh_shape, binning=binning, roi=roi,
+                        back_files=back_files, mask=mask_file)
 
-    composite, sum_map = mpr.process()
+    composite, sum_map = mpr.process(do_composite=True, do_sum=True)
 ```
 
 
