@@ -73,9 +73,7 @@ class Mapper(object):
             intensity etc.
     """
 
-    def __init__(self, file_list, mesh_shape, binning=None, roi=None,
-                 back_files=None, mask=None, dummy=0, flat=None, dark=None,
-                 norm_array=None, out_basename=None):
+    def __init__(self):
         """
         Initialisation of the class. All parameters for the processing can be
         passed directly here during the creation of the class instance.
@@ -98,21 +96,67 @@ class Mapper(object):
                 containing normalization values, e.g., incident flux.
             out_basename (string): base name for saving reconstructed data.
         """
-        self.file_list = file_list
+        # input parameters
+        self.in_files = None
+        self.back_files = None
+
+        # mesh parameters
+        self.npt_y = None
+        self.npt_x = None
+        self.mesh_shape = None
+        self.indices_y = None  # used for locating in mesh
+        self.indices_x = None
+        self.binning = None
+        self.roi = None
+        self.frame_shape = None
+        self.composite_shape = None
+
+        # correction parameters
+        self.mask = None
+        self.dummy = None
+        self.dark = None
+        self.flat = None
+        self.background = None
+        self.norm_array = None
+
+        # output parameters
+        self.composite_map = None
+        self.sum_map = None
+
+    def config_mapper(self, mesh_shape, binning=None, roi=None,
+                      mask=None, dummy=0, flat=None, dark=None,
+                      norm_array=None):
+        """
+
+        Args:
+            mesh_shape:
+            binning:
+            roi:
+            mask:
+            dummy:
+            flat:
+            dark:
+            norm_array:
+
+        Returns:
+
+        """
+        # mesh parameters
         self.npt_y = mesh_shape[0]
         self.npt_x = mesh_shape[1]
         self.mesh_shape = mesh_shape
-        ind_y, ind_x = np.indices(self.mesh_shape)
-        self.indices_y = ind_y.ravel()  # used for locating in mesh
+
+        ind_y, ind_x = np.indices(self.mesh_shape)   # used for locating in mesh
+        self.indices_y = ind_y.ravel()
         self.indices_x = ind_x.ravel()
 
+        # !TODO pyFAI fails if bin/shape are not compatible. Finish this.
         if (roi is None) and (binning is not None):
-            data_shape = io.load(file_list[0]).shape
+            data_shape = io.load(self.file_list[0]).shape
             bin_factor = (binning, binning)
             if any(i % j != 0 for i, j in zip(data_shape, bin_factor)):
                 roi = ((0, (data_shape[0] // 2) * 2),
                        (0, (data_shape[1] // 2) * 2))
-
         self.binning = binning
         self.roi = roi
 
@@ -122,63 +166,30 @@ class Mapper(object):
         if self.binning is not None:
             frame_y /= self.binning
             frame_x /= self.binning
-        
+
         self.frame_shape = (frame_y, frame_x)
-
         self.composite_shape = (frame_y * self.npt_y, frame_x * self.npt_x)
-        self.composite_map = np.zeros(self.composite_shape)
-        self.sum_map = np.zeros(self.mesh_shape)
 
-        self.norm_array = norm_array
-        self.out_basename = out_basename
-
+        # correction parameters
         if mask.__class__ is str:
             mask = io.load(mask, dtype=int)
         self.mask = mask
         self.dummy = dummy
 
-        if flat.__class__ is list:
-            flat = utils.average_images(flat)
-        elif flat.__class__ is str:
-            flat = io.load(flat)
-        self.flat = flat
+        self.dark = io.flexible_load(dark)
+        self.flat = io.flexible_load(flat)
+        self.norm_array = norm_array
 
-        if dark.__class__ is list:
-            dark = utils.average_images(dark)
-        elif dark.__class__ is str:
-            dark = io.load(flat)
-        self.dark = dark
-
-        if back_files is not None:
-            self.background = utils.average_images(back_files)
+        # !TODO correcting here means that should not be corrected in pyFAI
+        if self.back_files is not None:
+            bg = io.flexible_load(self.back_files)
             if self.dark is not None:
-                self.background -= self.dark
+                bg -= dark
             if self.flat is not None:
-                self.background /= self.flat
+                bg /= flat
             if self.mask is not None:
-                self.background[np.where(self.mask)] = self.dummy
-        else:
-            self.background = None
-
-    def make_background(self, back_files):
-        """
-        Args:
-            back_files (str or list): files for background
-        """
-        if back_files.__class__ is list:
-            bg = utils.average_images(back_files)
-        elif back_files.__class__ is str:
-            bg = io.load(back_files)
-        elif back_files.__class__ is np.ndarray:
-            bg = back_files
-
-        if self.dark is not None:
-            bg -= self.dark
-        if self.flat is not None:
-            bg /= self.flat
-        if self.mask is not None:
-            bg[np.where(self.mask)] = self.dummy
-        self.background = bg
+                bg[np.where(self.mask)] = self.dummy
+            self.background = bg
 
     def get_mesh_pos(self, linear_idx):
         """
@@ -235,11 +246,7 @@ class Mapper(object):
             data[np.where(self.mask)] = self.dummy
         if self.background is not None:
             data -= self.background
-        if self.roi is not None:
-            data = utils.extract_roi(data, self.roi)
-        if self.binning is not None:
-            data = utils.rebin(data, self.binning)
-        return data
+        return utils.reshape_array(data, self.roi, self.binning)
 
     def save(self, basename=None):
         """Save all stored arrays.
@@ -269,8 +276,10 @@ class Mapper(object):
             writer = io.Writer(self, None)
             writer.save(filename, self.sum_map, mode)
 
-    def process(self, do_composite=True, do_sum=True,
-                basename=None, verbose=True):
+    def process(self, in_files, mesh_shape, binning=None, roi=None,
+                back_files=None,
+                mask=None, dummy=0, dark=None, flat=None, norm_array=None,
+                basename=None, do_composite=True, do_sum=True, verbose=True):
         """
         Main processing function.
 
@@ -287,11 +296,23 @@ class Mapper(object):
             sum_map (ndarray): Optional. Array with same size as scan, each
                 pixel corresponds to sum diffraction intensity of given roi.
         """
+        self.in_files = in_files
+        self.back_files = back_files
+
+        self.config_mapper(mesh_shape, binning=binning, roi=roi,
+                           mask=mask, dummy=dummy, dark=dark, flat=flat,
+                           norm_array=norm_array)
+
+        if do_composite:
+            self.composite_map = np.zeros(self.composite_shape)
+        if do_sum:
+            self.sum_map = np.zeros(self.mesh_shape)
+
         try:
             t = Timer()
             t.start()
 
-            for i, f in enumerate(self.file_list):
+            for i, f in enumerate(self.in_files):
                 if verbose:
                     print 'Processing: ...{}'.format(f[-60:])
 

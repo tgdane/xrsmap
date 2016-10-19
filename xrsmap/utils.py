@@ -58,3 +58,19 @@ def extract_roi(data, roi):
         roi (np.ndarray):
     """
     return data[roi[0][0]:roi[1][0], roi[0][1]:roi[1][1]]
+
+
+def reshape_array(data, roi=None, binning=None):
+    """Checks if roi and/or binning and performs as necessary.
+
+    Args:
+        data (np.ndarray): input array.
+
+    Returns:
+        data (np.ndarray): reshaped array.
+    """
+    if roi is not None:
+        data = extract_roi(data, roi)
+    if binning is not None:
+        data = rebin(data, binning)
+    return data
