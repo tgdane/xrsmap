@@ -4,6 +4,12 @@ import time
 from . import utils
 from . import io
 
+try:
+    from multiprocessing import Pool
+    threading = True
+except ImportError:
+    threading = False
+
 
 class Mapper(object):
     """
@@ -75,26 +81,6 @@ class Mapper(object):
 
     def __init__(self):
         """
-        Initialisation of the class. All parameters for the processing can be
-        passed directly here during the creation of the class instance.
-
-        Args:
-            file_list (list): list of input images.
-            mesh_shape (tuple): number of scan points (npt_y, npt_x).
-            binning (int): rebinning factor, for best results use 2, 4, 8 etc.
-            roi (tuple): region of interest to be selected from the image. For
-                guaranteed success, ensure binning and roi are compatible.
-            back_files (string or list): list of files to be averaged to
-                generated a background image. This will be subtracted from all
-                data images.
-            mask (str or np.ndarray): path to or array containing mask.
-            flat (str, list or np.ndarray): path, list of paths or array of
-                flat field data. If list is passed, all files will be averaged.
-            dark (str, list or np.ndarray): path, list of paths or array of
-                dark field data. If list is passed, all files will be averaged.
-            norm_array (ndarray): Array of same length as input file list
-                containing normalization values, e.g., incident flux.
-            out_basename (string): base name for saving reconstructed data.
         """
         # input parameters
         self.in_files = None
@@ -248,6 +234,32 @@ class Mapper(object):
             data -= self.background
         return utils.reshape_array(data, self.roi, self.binning)
 
+    def process_frame(self, f, idx, do_composite=True, do_sum=True):
+        """Do all processing of a single frame.
+
+        Args:
+            f (str):
+            idx (int):
+            do_composite (bool):
+            do_sum (bool:
+
+        Returns:
+
+        """
+        # !TODO refactor in future for other processes.
+        data = io.load(f)
+
+        frame_data = self.pre_process_frame(data)
+        id_y, id_x = self.get_mesh_pos(idx)
+
+        if do_composite:
+            pos_y, pos_x = self.get_frame_coordinates(id_y, id_x)
+            self.composite_map[pos_y[0]:pos_y[1],
+                               pos_x[0]:pos_x[1]] = frame_data
+        if do_sum:
+            sum_intensity = np.sum(frame_data)
+            self.sum_map[id_y, id_x] = sum_intensity
+
     def save(self, basename=None):
         """Save all stored arrays.
 
@@ -315,21 +327,7 @@ class Mapper(object):
             for i, f in enumerate(self.in_files):
                 if verbose:
                     print 'Processing: ...{}'.format(f[-60:])
-
-                data = io.load(f)
-
-                if do_composite or do_sum:
-                    frame_data = self.pre_process_frame(data)
-                    id_y, id_x = self.get_mesh_pos(i)
-
-                if do_composite:
-                    pos_y, pos_x = self.get_frame_coordinates(id_y, id_x)
-                    self.composite_map[pos_y[0]:pos_y[1],
-                                       pos_x[0]:pos_x[1]] = frame_data
-
-                if do_sum:
-                    sum_intensity = np.sum(frame_data)
-                    self.sum_map[id_y, id_x] = sum_intensity
+                self.process_frame(f, i, do_composite, do_sum)
 
         except KeyboardInterrupt:
             print '\nInterrupted.\n'

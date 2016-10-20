@@ -210,6 +210,20 @@ def get_file_list(dname, fname, numbers=None, check_list=True):
     return file_list
 
 
+def partition_list(file_list, n_partitions):
+    """ Yield successive n-sized partitions from a list.
+
+    Args:
+        file_list:
+        n_partitions:
+
+    Returns:
+
+    """
+    for i in xrange(0, len(file_list), n_partitions):
+        yield file_list[i:i + n_partitions]
+
+
 def check_file_list(file_list):
     """
     Check if all files in list exist. This is particularly useful for large

@@ -38,6 +38,9 @@ def init_pyfai(ponifile, mask=None, flat=None, dark=None):
     return ai
 
 
+# def circular_roi(ai, data, radial_range, azimuth_range=None, unit='q_nm^-1'):
+
+
 def integrate1d(ai, data, npt, radial_range=None, azimuth_range=None,
                 method='lut', **kwargs):
     """
