@@ -35,7 +35,7 @@ Example usage
 
 
 Installation
-----
+------------
 In the near future, xrsmap will be available via PIP. In the meantime, download
 the source code in .zip format from the github
 [repository](https://github.com/tgdane/xrsmap/archive/master.zip) and unpack it.
@@ -50,3 +50,15 @@ Go to the `xrsmap-master` directory, build and install the package:
     cd xrsmap-master
     python setup.py build install
 ```
+
+Parallel processing
+-------------------
+`xrsmap` can make use of parallel processing by splitting up the processing operations
+into batches based on the number of cpu cores. To use this functionality,
+one must have the `pathos` library installed. The reason behind using `pathos`
+rather than the standard library `multiprocessing` is that `multiprocessing` uses
+`cPickel` to pickel the processes for serialization, and you cannot serialize
+class methods. `pathos` avoids this using `dill` instead of `cPickel`, which is
+capable of pickeling almost any python object.
+
+

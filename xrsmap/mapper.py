@@ -1,14 +1,28 @@
+import sys
 import numpy as np
 import time
+import itertools
+import fabio
 
 from . import utils
 from . import io
 
 try:
-    from multiprocessing import Pool
+    from pathos.multiprocessing import ProcessPool as Pool
+    from pathos.multiprocessing import cpu_count
     threading = True
 except ImportError:
     threading = False
+
+
+# def thread_process_frame(mpr, arg_list):
+#     print 'at thread_process_frame'
+#     mpr.process_frame(arg_list)
+#
+#
+# def thread_process_frame_star(arg_list):
+#     print 'at thread_process_frame_star'
+#     thread_process_frame(*arg_list)
 
 
 class Mapper(object):
@@ -82,9 +96,7 @@ class Mapper(object):
     def __init__(self):
         """
         """
-        # input parameters
-        self.in_files = None
-        self.back_files = None
+        self.reader = None  # fabio.edfimage.EdfImage
 
         # mesh parameters
         self.npt_y = None
@@ -104,14 +116,16 @@ class Mapper(object):
         self.flat = None
         self.background = None
         self.norm_array = None
+        self.dtype = None
 
         # output parameters
         self.composite_map = None
         self.sum_map = None
 
     def config_mapper(self, mesh_shape, binning=None, roi=None,
-                      mask=None, dummy=0, flat=None, dark=None,
-                      norm_array=None):
+                      mask=None, dummy=0, back_files=None,
+                      flat=None, dark=None, normalization=None,
+                      dtype='float32'):
         """
 
         Args:
@@ -122,7 +136,8 @@ class Mapper(object):
             dummy:
             flat:
             dark:
-            norm_array:
+            normalization:
+            dtype:
 
         Returns:
 
@@ -137,17 +152,18 @@ class Mapper(object):
         self.indices_x = ind_x.ravel()
 
         # !TODO pyFAI fails if bin/shape are not compatible. Finish this.
-        if (roi is None) and (binning is not None):
-            data_shape = io.load(self.file_list[0]).shape
-            bin_factor = (binning, binning)
-            if any(i % j != 0 for i, j in zip(data_shape, bin_factor)):
-                roi = ((0, (data_shape[0] // 2) * 2),
-                       (0, (data_shape[1] // 2) * 2))
+        # if (roi is None) and (binning is not None):
+        #     data_shape = io.load(self.file_list[0]).shape
+        #     bin_factor = (binning, binning)
+        #     if any(i % j != 0 for i, j in zip(data_shape, bin_factor)):
+        #         roi = ((0, (data_shape[0] // 2) * 2),
+        #                (0, (data_shape[1] // 2) * 2))
         self.binning = binning
         self.roi = roi
+        self.dtype = dtype
 
-        frame_y = roi[1][0] - roi[0][0]
-        frame_x = roi[1][1] - roi[0][1]
+        frame_y = roi[3] - roi[1] + 1
+        frame_x = roi[2] - roi[0] + 1
 
         if self.binning is not None:
             frame_y /= self.binning
@@ -157,25 +173,39 @@ class Mapper(object):
         self.composite_shape = (frame_y * self.npt_y, frame_x * self.npt_x)
 
         # correction parameters
-        if mask.__class__ is str:
-            mask = io.load(mask, dtype=int)
+        mask = io.flexible_load(mask, dtype=bool)
+        if self.roi is not None:
+            mask = utils.extract_roi(mask, self.roi)
         self.mask = mask
         self.dummy = dummy
 
-        self.dark = io.flexible_load(dark)
-        self.flat = io.flexible_load(flat)
-        self.norm_array = norm_array
+        # !TODO check pre-processing of dark/flat
+        if dark is not None:
+            dark = io.flexible_load(dark)
+            self.dark = utils.reshape_array(dark, self.roi, self.binning)
+        if flat is not None:
+            flat = io.flexible_load(flat)
+            self.flat = utils.reshape_array(flat, self.roi, self.binning)
+
+        # !TODO add normalization in pre_process_frame
+        if normalization is not None:
+            if normalization.__class__ in [int, float]:
+                normalization = np.zeros(self.indices_x.shape) + normalization
+            elif len(normalization.shape) == 2:
+                normalization = normalization.ravel()
+                assert normalization.shape == self.indices_x.shape
+            self.norm_array = normalization
 
         # !TODO correcting here means that should not be corrected in pyFAI
-        if self.back_files is not None:
-            bg = io.flexible_load(self.back_files)
-            if self.dark is not None:
-                bg -= dark
-            if self.flat is not None:
-                bg /= flat
+        if back_files is not None:
+            back = io.flexible_load(back_files, self.dtype)
+            if self.roi is not None:
+                back = utils.extract_roi(back, self.roi)
             if self.mask is not None:
-                bg[np.where(self.mask)] = self.dummy
-            self.background = bg
+                back[np.where(self.mask)] = self.dummy
+            if self.binning is not None:
+                back = utils.rebin(back, self.binning)
+            self.background = back
 
     def get_mesh_pos(self, linear_idx):
         """
@@ -212,6 +242,23 @@ class Mapper(object):
         end_x = start_x + len_x
         return (start_y, end_y), (start_x, end_x)
 
+    def fast_load(self, f):
+        """ Use fabio fast readers. These are used in non-threadded
+        processes. For some reason there is some incompatibility when
+        storing the reader as a class attribute.
+
+        Args:
+            f (str): filename
+
+        Returns:
+            data (np.ndarray):
+        """
+        if self.roi is not None:
+            data = self.reader.fastReadROI(f, self.roi)
+        else:
+            data = self.reader.fastReadData(f)
+        return data
+
     def pre_process_frame(self, data):
         """
         Process a single frame. ROI will be used if used in the creation of the
@@ -224,41 +271,195 @@ class Mapper(object):
         Returns:
             data (ndarray): processed framed data.
         """
-        if self.dark is not None:
-            data -= self.dark
-        if self.flat is not None:
-            data /= self.flat
+        # !TODO check order of flat, dark
+        # if self.dark is not None:
+        #     data -= self.dark
+        # if self.flat is not None:
+        #     data /= self.flat
         if self.mask is not None:
             data[np.where(self.mask)] = self.dummy
+        if self.binning is not None:
+            data = utils.rebin(data, self.binning)
         if self.background is not None:
             data -= self.background
-        return utils.reshape_array(data, self.roi, self.binning)
+        return data
 
-    def process_frame(self, f, idx, do_composite=True, do_sum=True):
-        """Do all processing of a single frame.
+    def process_frame(self, f, do_composite=True, do_sum=True):
+        """ Process a single frame.
 
         Args:
-            f (str):
-            idx (int):
+            f (str): filename
             do_composite (bool):
-            do_sum (bool:
+            do_sum (bool):
 
         Returns:
-
+            out (dict):
         """
-        # !TODO refactor in future for other processes.
-        data = io.load(f)
+        try:
+            data = self.fast_load(f)
+        except AttributeError:
+            data = io.load(f)
+            if self.roi is not None:
+                data = utils.extract_roi(data, self.roi)
+        data = data.astype(self.dtype)
+        data = self.pre_process_frame(data)
 
-        frame_data = self.pre_process_frame(data)
-        id_y, id_x = self.get_mesh_pos(idx)
+        out = {}
+        if do_composite:
+            out['frame_data'] = data
+        if do_sum:
+            out['sum_data'] = np.sum(data)
+        return out
+
+    def thread_process_frame(self, f, do_composite=True, do_sum=True):
+        """ Process a single frame (threaded version).
+
+        Args:
+            f (str): filename
+            do_composite (bool):
+            do_sum (bool):
+
+        Returns:
+            out (dict):
+        """
+        data = io.load(f)
+        if self.roi is not None:
+            data = utils.extract_roi(data, self.roi)
+        data = self.pre_process_frame(data)
+
+        out = {}
+        if do_composite:
+            out['frame_data'] = data
+        if do_sum:
+            out['sum_data'] = np.sum(data)
+        return out
+
+    def process(self, in_files, mesh_shape, binning=None, roi=None,
+                back_files=None, mask=None, dummy=0,
+                dark=None, flat=None, normalization=None,
+                do_composite=True, do_sum=True,
+                basename=None, verbose=True, thread=False):
+        """
+        Main processing function.
+
+        Args:
+            in_files (str):
+            mesh_shape (tuple):
+            binning (int):
+            roi (tuple):
+            back_files (str or list):
+            mask (str or np.ndarray):
+            dummy (int):
+            dark:
+            flat:
+            normalization:
+            do_composite (bool): create the reconstructed image.
+            do_sum (bool):
+            basename (str):
+            verbose (bool): will print the file names during processing.
+            thread (bool):
+
+        Returns:
+            composite_map (ndarray): reconstructed composite map with
+                diffraction roi positioned at each scan point. Array has size
+                scan_size * roi_size.
+            sum_map (ndarray): Optional. Array with same size as scan, each
+                pixel corresponds to sum diffraction intensity of given roi.
+        """
+        self.config_mapper(mesh_shape, binning=binning, roi=roi,
+                           mask=mask, dummy=dummy, back_files=back_files,
+                           dark=dark, flat=flat, normalization=normalization)
+
+        n_files = len(in_files)
+        pos_ids = [self.get_mesh_pos(i) for i in range(n_files)]
+        frm_ids = [self.get_frame_coordinates(i[0], i[1]) for i in pos_ids]
+
+        # Must be created outside of class instance, otherwise during the
+        # creation of the child processes for pool.map() this array is in
+        # memory for each of the processes. Memory overflow and the processes
+        # execute separately.
+        if do_composite:
+            composite_map = np.zeros(self.composite_shape)
+        if do_sum:
+            sum_map = np.zeros(self.mesh_shape)
+
+        t = Timer()
+        t.start()
+
+        if threading and thread:
+            nt = cpu_count()  # number of threads
+            pool = Pool(nt)
+
+            if verbose:
+                print 'Using multiprocessing: {} processes'.format(nt)
+                print '***** DO NOT INTERRUPT!!! *****'
+
+            for i, partition in enumerate(io.partition_list(in_files, nt)):
+                indices = [i * nt + j[0] for j in enumerate(partition)]
+
+                if verbose:
+                    msg = '\rProcessing files (of {}): {}'
+                    sys.stdout.write(msg.format(n_files, indices))
+                    sys.stdout.flush()
+
+                out_list = pool.map(self.thread_process_frame, partition,
+                                    itertools.repeat(do_composite, nt),
+                                    itertools.repeat(do_sum, nt))
+
+                for ii, out in zip(indices, out_list):
+                    if do_composite:
+                        fy, fx = frm_ids[ii]
+                        composite_map[fy[0]:fy[1],
+                                      fx[0]:fx[1]] = out['frame_data']
+                    if do_sum:
+                        py, px = pos_ids[ii]
+                        sum_map[py, px] = out['sum_data']
+            done = indices[-1] + 1
+        else:
+            try:
+                self.reader = fabio.edfimage.EdfImage()
+                self.reader.read(in_files[0])
+
+                for i, f in enumerate(in_files):
+                    if verbose:
+                        msg = '\rProcessing file ...{} of {}'
+                        sys.stdout.write(msg.format(f[-40:], n_files))
+                        sys.stdout.flush()
+                    out = self.process_frame(f, do_composite, do_sum)
+
+                    if do_composite:
+                        fy, fx = frm_ids[i]
+                        composite_map[fy[0]:fy[1],
+                                      fx[0]:fx[1]] = out['frame_data']
+                    if do_sum:
+                        py, px = pos_ids[i]
+                        sum_map[py, px] = out['sum_data']
+
+            except KeyboardInterrupt:
+                print '\nInterrupted.\n'
+                pass
+            done = i
 
         if do_composite:
-            pos_y, pos_x = self.get_frame_coordinates(id_y, id_x)
-            self.composite_map[pos_y[0]:pos_y[1],
-                               pos_x[0]:pos_x[1]] = frame_data
+            self.composite_map = composite_map
         if do_sum:
-            sum_intensity = np.sum(frame_data)
-            self.sum_map[id_y, id_x] = sum_intensity
+            self.sum_map = sum_map
+
+        dt = t.stop()
+        if verbose:
+            sys.stdout.write('\rProcessing files: done{}'.format(' '*90)[:90])
+            sys.stdout.flush()
+            print '\n{} frames processed in {}'.format(done, t.pretty_print(dt))
+            print '{} per frame'.format(t.pretty_print(dt/done))
+
+        self.save(basename)
+
+        out = []
+        if do_composite:
+            out.append(self.composite_map)
+        if do_sum:
+            out.append(self.sum_map)
+        return out
 
     def save(self, basename=None):
         """Save all stored arrays.
@@ -288,65 +489,6 @@ class Mapper(object):
             writer = io.Writer(self, None)
             writer.save(filename, self.sum_map, mode)
 
-    def process(self, in_files, mesh_shape, binning=None, roi=None,
-                back_files=None,
-                mask=None, dummy=0, dark=None, flat=None, norm_array=None,
-                basename=None, do_composite=True, do_sum=True, verbose=True):
-        """
-        Main processing function.
-
-        Args:
-            do_composite (bool): create the reconstructed image.
-            do_sum (bool):
-            basename (str):
-            verbose (bool): will print the filenames during processing.
-
-        Returns:
-            composite_map (ndarray): reconstructed composite map with
-                diffraction roi positioned at each scan point. Array has size
-                scan_size * roi_size.
-            sum_map (ndarray): Optional. Array with same size as scan, each
-                pixel corresponds to sum diffraction intensity of given roi.
-        """
-        self.in_files = in_files
-        self.back_files = back_files
-
-        self.config_mapper(mesh_shape, binning=binning, roi=roi,
-                           mask=mask, dummy=dummy, dark=dark, flat=flat,
-                           norm_array=norm_array)
-
-        if do_composite:
-            self.composite_map = np.zeros(self.composite_shape)
-        if do_sum:
-            self.sum_map = np.zeros(self.mesh_shape)
-
-        try:
-            t = Timer()
-            t.start()
-
-            for i, f in enumerate(self.in_files):
-                if verbose:
-                    print 'Processing: ...{}'.format(f[-60:])
-                self.process_frame(f, i, do_composite, do_sum)
-
-        except KeyboardInterrupt:
-            print '\nInterrupted.\n'
-            pass
-
-        dt = t.stop()
-        if verbose:
-            print '{} frames processed in {}'.format(i, t.pretty_print(dt))
-            print '{} per frame'.format(t.pretty_print(dt/i))
-
-        self.save(basename)
-
-        out = []
-        if do_composite:
-            out.append(self.composite_map)
-        if do_sum:
-            out.append(self.sum_map)
-        return out
-
 
 class Timer(object):
     def __init__(self):
@@ -374,10 +516,10 @@ class Timer(object):
                 fmt = '{:g} minutes {:.2f} seconds'.format(m, s)
         else:
             if dt < 0.001:
-                fmt = '{:.3f} us'.format(dt * 1e6)
+                fmt = '{:.2f} us'.format(dt * 1e6)
             elif dt < 1:
-                fmt = '{:.3f} ms'.format(dt * 1e3)
+                fmt = '{:.2f} ms'.format(dt * 1e3)
             else:
-                fmt = '{:.3f} s'.format(dt)
+                fmt = '{:.2f} s'.format(dt)
         return fmt
 

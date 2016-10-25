@@ -8,8 +8,8 @@ _version_info = namedtuple(
     "version_info", ["major", "minor", "micro", "releaselevel", "serial"])
 
 MAJOR = 0
-MINOR = 1
-MICRO = 1
+MINOR = 2
+MICRO = 0
 RELEV = "dev"  # <16
 SERIAL = 0  # <16
 

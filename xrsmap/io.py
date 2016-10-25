@@ -7,7 +7,7 @@ import fabio
 from . import utils
 
 
-def load(filename, dtype=np.float64):
+def load(filename, dtype='float32'):
     """ Wrapper for fabio.open().
 
     Args:
@@ -20,7 +20,7 @@ def load(filename, dtype=np.float64):
     return fabio.open(filename).data.astype(dtype)
 
 
-def flexible_load(data):
+def flexible_load(data, dtype='float32'):
     """
     Flexible loading of data. For some fields, e.g. dark, flat, background,
     user can pass a path to file (str), list of paths to be averaged (list)
@@ -41,9 +41,11 @@ def flexible_load(data):
         raise IOError('Tried to load data: {}, but was not of type:'
                       'list, string or np.ndarray'.format(data))
     if data.__class__ is list:
-        data = utils.average_images(data)
+        data = utils.average_images(data).astype(dtype)
     elif data.__class__ is str:
-        data = io.load(data)
+        data = load(data, dtype)
+    else:
+        data = data.astype(dtype)
     return data
 
 

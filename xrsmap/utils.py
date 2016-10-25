@@ -25,9 +25,9 @@ def average_images(file_list, filter="mean"):
     Returns:
         average (np.ndarray): average of input images.
     """
-    return pyFAI.utils.averageImages(file_list, output=None, threshold=None, 
+    return pyFAI.utils.averageImages(file_list, output=None, threshold=None,
                                      minimum=None, maximum=None,
-                                     darks=None, flats=None, filter_=filter, 
+                                     darks=None, flats=None, filter_=filter,
                                      correct_flat_from_dark=False,
                                      cutoff=None, quantiles=None, fformat=None)
 
@@ -49,15 +49,33 @@ def rebin(data, binning, norm=False):
 def extract_roi(data, roi):
     """Cut a region of interest out of an array.
 
+    The roi is supplied in coordinates according to the convention used for
+    the fabio.EdfImage.fastReadROI, that is:
+    - image lower left-hand corner is (0, 0)
+    - roi = (x_min, y_min, x_max, y_max).
+
+    To display an image in the correct coordinates to determine ROI:
+    ```python
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        plt.imshow(np.flipud(data), origin='lower')
+    ```
+
     Args:
         data (np.ndarray): input array.
-        roi (tuple): region of interest in pixel coordinates:
-            ((y_min, y_max), (x_min, x_max)).
+        roi (tuple): region of interest in pixel coordinates from LL corner:
+            (x_min, y_min, x_max, y_max)
 
     Returns:
         roi (np.ndarray):
     """
-    return data[roi[0][0]:roi[1][0], roi[0][1]:roi[1][1]]
+    # this calculation ensures that the ROI returned is exactly the same
+    # as when using fastReadROI() with the same tuple for roi.
+    x_min, y_min, x_max, y_max = roi
+    y0, y1, x0, x1 = (data.shape[0] - y_max - 1, data.shape[0] - y_min,
+                      x_min, x_max + 1)
+    return data[y0:y1, x0:x1]
 
 
 def reshape_array(data, roi=None, binning=None):
