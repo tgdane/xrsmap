@@ -9,30 +9,49 @@ material. The xrsmap package performs composite reconstruction of the maps
 allowing the plotting of specific features in the data as a function of sample
 position.
 
-Example usage
-----
+Main methods
+------------
+There are two main mapping functions in `xrsmap`. 
+
+The first, `composite_map`, based on a square region of interest (ROI),
+will generate a composite image, where the diffraction patterns within
+the ROI will be placed at their respective positions in the output map.
+Additionally, a map will be created where the intensity at each pixel 
+corresponds to the sum intensity of the selected ROI.
 
 ```python
-
     import xrsmap
-    import matplotlib.pyplot as plt
-
+    
     in_files =                      # input images
     back_files =                    # background images
     mask_file =                     # mask file
     
-    mesh_shape = (13, 21)           # (y_axis, x_axis)
+    mesh_shape = (41, 41)           # (y_axis, x_axis)
     binning = 16                    # rebinning factor
-    roi = ((568, 478),(1928, 1838)) # region-of-interest in detector image
-
-    mpr = xrsmap.Mapper(in_files, mesh_shape, binning=binning, roi=roi,
-                        back_files=back_files, mask=mask_file)
-
-    composite, sum_map = mpr.process(do_composite=True, do_sum=True)
+    roi = (536, 306, 1783, 1553)    # region-of-interest in detector image
+    
+    mpr = xrsmap.Mapper(npt_x, npt_y, mask=mask, dummy=0, 
+                        back_files=back_files)
+    out = mpr.composite_map(in_files, roi=roi, binning=binning)
+    comp_map, sum_map = out
 ```
 
+The second method, `circle_map` will use a circular ROI on the detector
+to determine the sum intensity. In this instance, the centre of the 
+detector, radius and witdth of the integration region (all in pixel
+units) are specified.
 
-
+```python
+    cen_x = 1160
+    cen_y = 930
+    radius = 584
+    width = 32
+    
+    mpr = xrsmap.Mapper(npt_x, npt_y, mask=mask, dummy=0, 
+                        back_files=back_files)
+    sum_map = mpr.circle_map(in_files, cen_x, cen_y, radius, width,
+                         basename=None, verbose=True, thread=False)
+```
 
 Installation
 ------------
@@ -51,8 +70,27 @@ Go to the `xrsmap-master` directory, build and install the package:
     python setup.py build install
 ```
 
-Parallel processing
--------------------
+Performance
+-----------
+The speed of image reconstruction depends on a number of factors:
+- Number of data files
+- Data storage device and connection (SSD vs. HDD etc.)
+- Region-of-interest - the smaller the roi the faster the process.
+
+### File loading
+The fabio.edfimage.EdfImage class has two fast loading methods: `fastReadData`
+and `fastReadROI`, which operate faster than `fabio.open(fname).data`.
+In particular, the ROI reader only unpacks the binary data of the 
+specified ROI so significant speed gains can be had when using small
+ROIs. 
+
+### Parallel processing
+Update: with implementation of fast `fabio` readers, parallel processing
+does not offer any advantage on my machine. It remains to be seen if 
+running parallel on a machine with 8+ cores gains any advantage over the
+fast fabio methods.
+
+Original discussion:
 `xrsmap` can make use of parallel processing by splitting up the processing operations
 into batches based on the number of cpu cores. To use this functionality,
 one must have the `pathos` library installed. The reason behind using `pathos`

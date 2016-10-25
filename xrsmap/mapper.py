@@ -93,74 +93,105 @@ class Mapper(object):
             intensity etc.
     """
 
-    def __init__(self):
-        """
-        """
-        self.reader = None  # fabio.edfimage.EdfImage
-
-        # mesh parameters
-        self.npt_y = None
-        self.npt_x = None
-        self.mesh_shape = None
-        self.indices_y = None  # used for locating in mesh
-        self.indices_x = None
-        self.binning = None
-        self.roi = None
-        self.frame_shape = None
-        self.composite_shape = None
-
-        # correction parameters
-        self.mask = None
-        self.dummy = None
-        self.dark = None
-        self.flat = None
-        self.background = None
-        self.norm_array = None
-        self.dtype = None
-
-        # output parameters
-        self.composite_map = None
-        self.sum_map = None
-
-    def config_mapper(self, mesh_shape, binning=None, roi=None,
-                      mask=None, dummy=0, back_files=None,
-                      flat=None, dark=None, normalization=None,
-                      dtype='float32'):
+    def __init__(self, npt_x, npt_y, mask=None, dummy=0,
+                 back_files=None, dark=None, flat=None,
+                 dtype='float32'):
         """
 
         Args:
-            mesh_shape:
-            binning:
-            roi:
-            mask:
-            dummy:
-            flat:
-            dark:
-            normalization:
-            dtype:
-
-        Returns:
-
+            npt_x (int):
+            npt_y (int):
+            mask (str):
+            dummy (int):
+            back_files (list):
+            dark (str):
+            flat (str):
+            dtype (str):
         """
+        self.reader = None
+
         # mesh parameters
-        self.npt_y = mesh_shape[0]
-        self.npt_x = mesh_shape[1]
-        self.mesh_shape = mesh_shape
+        self.npt_y = npt_x
+        self.npt_x = npt_y
+        self.mesh_shape = (npt_y, npt_x)
 
         ind_y, ind_x = np.indices(self.mesh_shape)   # used for locating in mesh
         self.indices_y = ind_y.ravel()
         self.indices_x = ind_x.ravel()
 
-        # !TODO pyFAI fails if bin/shape are not compatible. Finish this.
-        # if (roi is None) and (binning is not None):
-        #     data_shape = io.load(self.file_list[0]).shape
-        #     bin_factor = (binning, binning)
-        #     if any(i % j != 0 for i, j in zip(data_shape, bin_factor)):
-        #         roi = ((0, (data_shape[0] // 2) * 2),
-        #                (0, (data_shape[1] // 2) * 2))
+        # correction parameters
+        self.mask = io.load(mask, dtype=int)
+        self.dummy = dummy
+        if back_files is not None:
+            back = utils.average_images(back_files)
+        else:
+            back = None
+        self.background = back
+        self.dtype = dtype
+        if dark is not None:
+            dark = io.load(dark)
+            self.dark = dark
+        else:
+            self.dark = None
+        if flat is not None:
+            flat = io.load(flat)
+            self.flat = flat
+        else:
+            self.flat = None
+
+        # box roi
+        self.binning = None
+        self.roi = None
+        self.frame_shape = None
+        self.composite_shape = None
+
+        # circular roi
+        self.croi_mask = None
+
+    def prepare_correction_files(self):
+        """ To speed up calculations, the correction files, i.e.,
+        back, dark, flat are processed as the files will be.
+
+        This is import for e.g. subtracting background: calculation
+        is faster with smaller arrays, rather than performing on the
+        full data arrays.
+        """
+        if (self.mask is not None) and (self.roi is not None):
+            self.mask = utils.extract_roi(self.mask, self.roi)
+
+        def prep_single(data):
+            if self.roi is not None:
+                data = utils.extract_roi(data, self.roi)
+            if self.mask is not None:
+                data[np.where(self.mask)] = self.dummy
+            if self.binning is not None:
+                data = utils.rebin(data, self.binning)
+            return data
+
+        if self.dark is not None:
+            self.dark = prep_single(self.dark)
+        if self.flat is not None:
+            self.flat = prep_single(self.flat)
+        if self.background is not None:
+            self.background = prep_single(self.background)
+            if self.dark is not None:
+                self.background -= self.dark
+            if self.flat is not None:
+                self.background /= self.flat
+
+    def config_box_roi(self, binning=None, roi=None):
+        """ Set up the configuration of the box roi.
+
+
+        Args:
+            binning:
+            roi:
+
+        Returns:
+
+        """
         self.binning = binning
         self.roi = roi
-        self.dtype = dtype
 
         frame_y = roi[3] - roi[1] + 1
         frame_x = roi[2] - roi[0] + 1
@@ -171,41 +202,61 @@ class Mapper(object):
 
         self.frame_shape = (frame_y, frame_x)
         self.composite_shape = (frame_y * self.npt_y, frame_x * self.npt_x)
+        self.prepare_correction_files()
 
-        # correction parameters
-        mask = io.flexible_load(mask, dtype=bool)
-        if self.roi is not None:
-            mask = utils.extract_roi(mask, self.roi)
-        self.mask = mask
-        self.dummy = dummy
+    def config_circle_roi(self, cen_x, cen_y, r, w):
+        """ Set up the configuration of the circle roi.
 
-        # !TODO check pre-processing of dark/flat
-        if dark is not None:
-            dark = io.flexible_load(dark)
-            self.dark = utils.reshape_array(dark, self.roi, self.binning)
-        if flat is not None:
-            flat = io.flexible_load(flat)
-            self.flat = utils.reshape_array(flat, self.roi, self.binning)
+        This function will calculate the require roi to contain the circle,
+        which means that the fastReadROI loader can be used.
 
-        # !TODO add normalization in pre_process_frame
-        if normalization is not None:
-            if normalization.__class__ in [int, float]:
-                normalization = np.zeros(self.indices_x.shape) + normalization
-            elif len(normalization.shape) == 2:
-                normalization = normalization.ravel()
-                assert normalization.shape == self.indices_x.shape
-            self.norm_array = normalization
+        Args:
+            cen_x:
+            cen_y:
+            r:
+            w:
 
-        # !TODO correcting here means that should not be corrected in pyFAI
-        if back_files is not None:
-            back = io.flexible_load(back_files, self.dtype)
-            if self.roi is not None:
-                back = utils.extract_roi(back, self.roi)
-            if self.mask is not None:
-                back[np.where(self.mask)] = self.dummy
-            if self.binning is not None:
-                back = utils.rebin(back, self.binning)
-            self.background = back
+        Returns:
+
+        """
+        roi_len = r + w / 2 + 10    # pad 10 pixels to be sure to contain roi
+        roi = (cen_x - roi_len, cen_y - roi_len,
+               cen_x + roi_len - 1, cen_y + roi_len - 1)
+
+        new_shape = (roi[2] - roi[0] + 1, roi[3] - roi[1] + 1)
+        assert new_shape[0] == new_shape[1]
+        self.roi = roi
+        self.croi_mask = self.make_croi_mask(new_shape, r, w)
+        self.prepare_correction_files()
+
+    @staticmethod
+    def make_croi_mask(shape, radius, width):
+        """ Prepare a mask, which defines a ring on the detector. The ring
+        is centered at the centre of the image, with an inner radius of
+        radius - width / 2 and an outer radius of radius + width / 2. The ring
+        is set to one and outside to zero.
+
+        Args:
+            shape (tuple): shape of the image.
+            radius:
+            width:
+
+        Returns:
+
+        """
+        assert shape[0] == shape[1]
+        ind_y, ind_x = np.indices(shape)
+        ind_y -= shape[0] / 2
+        ind_x -= shape[1] / 2
+
+        radius_array = np.sqrt(ind_x**2 + ind_y**2)
+        r0 = radius - width / 2
+        r1 = radius + width / 2
+
+        mask = np.ones(shape).astype(int)
+        mask[np.where(radius_array < r0)] = 0
+        mask[np.where(radius_array > r1)] = 0
+        return mask
 
     def get_mesh_pos(self, linear_idx):
         """
@@ -257,164 +308,108 @@ class Mapper(object):
             data = self.reader.fastReadROI(f, self.roi)
         else:
             data = self.reader.fastReadData(f)
-        return data
+        return data.astype(self.dtype)
 
-    def pre_process_frame(self, data):
+    def get_frame_data(self, data):
         """
-        Process a single frame. ROI will be used if used in the creation of the
-        class, re-binned if binning is provided, background will be subtracted
-        if background subtraction is chosen.
 
         Args:
-            data (np.ndarray): filename of image to process.
+            data (np.ndarray):
 
         Returns:
-            data (ndarray): processed framed data.
+            data (np.ndarray)
         """
-        # !TODO check order of flat, dark
-        # if self.dark is not None:
-        #     data -= self.dark
-        # if self.flat is not None:
-        #     data /= self.flat
         if self.mask is not None:
             data[np.where(self.mask)] = self.dummy
         if self.binning is not None:
             data = utils.rebin(data, self.binning)
+        if self.dark is not None:
+            data -= self.dark
+        if self.flat is not None:
+            data /= self.flat
         if self.background is not None:
             data -= self.background
         return data
 
-    def process_frame(self, f, do_composite=True, do_sum=True):
-        """ Process a single frame.
+    def process_frame(self, f):
+        """
 
         Args:
             f (str): filename
-            do_composite (bool):
-            do_sum (bool):
 
         Returns:
-            out (dict):
+
         """
-        try:
-            data = self.fast_load(f)
-        except AttributeError:
-            data = io.load(f)
-            if self.roi is not None:
-                data = utils.extract_roi(data, self.roi)
-        data = data.astype(self.dtype)
-        data = self.pre_process_frame(data)
+        data = self.fast_load(f)
+        frame_data = self.get_frame_data(data)
 
-        out = {}
-        if do_composite:
-            out['frame_data'] = data
-        if do_sum:
-            out['sum_data'] = np.sum(data)
-        return out
+        if self.croi_mask is not None:
+            return np.sum(data[np.where(self.croi_mask)])
+        else:
+            return frame_data, np.sum(frame_data)
 
-    def thread_process_frame(self, f, do_composite=True, do_sum=True):
-        """ Process a single frame (threaded version).
+    def _process(self, in_files,  roi=None, binning=None,
+                 basename=None,  verbose=True, thread=False):
+        """
 
         Args:
-            f (str): filename
-            do_composite (bool):
-            do_sum (bool):
+            in_files:
+            roi:
+            binning:
+            basename:
+            verbose:
+            thread:
 
         Returns:
-            out (dict):
+
         """
-        data = io.load(f)
-        if self.roi is not None:
-            data = utils.extract_roi(data, self.roi)
-        data = self.pre_process_frame(data)
-
-        out = {}
-        if do_composite:
-            out['frame_data'] = data
-        if do_sum:
-            out['sum_data'] = np.sum(data)
-        return out
-
-    def process(self, in_files, mesh_shape, binning=None, roi=None,
-                back_files=None, mask=None, dummy=0,
-                dark=None, flat=None, normalization=None,
-                do_composite=True, do_sum=True,
-                basename=None, verbose=True, thread=False):
-        """
-        Main processing function.
-
-        Args:
-            in_files (str):
-            mesh_shape (tuple):
-            binning (int):
-            roi (tuple):
-            back_files (str or list):
-            mask (str or np.ndarray):
-            dummy (int):
-            dark:
-            flat:
-            normalization:
-            do_composite (bool): create the reconstructed image.
-            do_sum (bool):
-            basename (str):
-            verbose (bool): will print the file names during processing.
-            thread (bool):
-
-        Returns:
-            composite_map (ndarray): reconstructed composite map with
-                diffraction roi positioned at each scan point. Array has size
-                scan_size * roi_size.
-            sum_map (ndarray): Optional. Array with same size as scan, each
-                pixel corresponds to sum diffraction intensity of given roi.
-        """
-        self.config_mapper(mesh_shape, binning=binning, roi=roi,
-                           mask=mask, dummy=dummy, back_files=back_files,
-                           dark=dark, flat=flat, normalization=normalization)
-
         n_files = len(in_files)
-        pos_ids = [self.get_mesh_pos(i) for i in range(n_files)]
-        frm_ids = [self.get_frame_coordinates(i[0], i[1]) for i in pos_ids]
 
-        # Must be created outside of class instance, otherwise during the
-        # creation of the child processes for pool.map() this array is in
-        # memory for each of the processes. Memory overflow and the processes
-        # execute separately.
-        if do_composite:
+        pos_ids = [self.get_mesh_pos(i) for i in range(n_files)]
+        if self.composite_shape is not None:
+            # Must be created outside of class instance, otherwise during the
+            # creation of the child processes for pool.map() this array is in
+            # memory for each of the processes. Memory overflow and the
+            # processes execute separately.
             composite_map = np.zeros(self.composite_shape)
-        if do_sum:
-            sum_map = np.zeros(self.mesh_shape)
+            frm_ids = [self.get_frame_coordinates(i[0], i[1]) for i in pos_ids]
+        else:
+            composite_map = None
+        sum_map = np.zeros(self.mesh_shape)
 
         t = Timer()
         t.start()
 
         if threading and thread:
-            nt = cpu_count()  # number of threads
-            pool = Pool(nt)
-
-            if verbose:
-                print 'Using multiprocessing: {} processes'.format(nt)
-                print '***** DO NOT INTERRUPT!!! *****'
-
-            for i, partition in enumerate(io.partition_list(in_files, nt)):
-                indices = [i * nt + j[0] for j in enumerate(partition)]
-
-                if verbose:
-                    msg = '\rProcessing files (of {}): {}'
-                    sys.stdout.write(msg.format(n_files, indices))
-                    sys.stdout.flush()
-
-                out_list = pool.map(self.thread_process_frame, partition,
-                                    itertools.repeat(do_composite, nt),
-                                    itertools.repeat(do_sum, nt))
-
-                for ii, out in zip(indices, out_list):
-                    if do_composite:
-                        fy, fx = frm_ids[ii]
-                        composite_map[fy[0]:fy[1],
-                                      fx[0]:fx[1]] = out['frame_data']
-                    if do_sum:
-                        py, px = pos_ids[ii]
-                        sum_map[py, px] = out['sum_data']
-            done = indices[-1] + 1
+            raise NotImplementedError('taken out for the moment')
+            # nt = cpu_count()  # number of threads
+            # pool = Pool(nt)
+            #
+            # if verbose:
+            #     print 'Using multiprocessing: {} processes'.format(nt)
+            #     print '***** DO NOT INTERRUPT!!! *****'
+            #
+            # for i, partition in enumerate(io.partition_list(in_files, nt)):
+            #     indices = [i * nt + j[0] for j in enumerate(partition)]
+            #
+            #     if verbose:
+            #         msg = '\rProcessing files (of {}): {}'
+            #         sys.stdout.write(msg.format(n_files, indices))
+            #         sys.stdout.flush()
+            #
+            #     out_list = pool.map(self.thread_process_frame, partition,
+            #                         itertools.repeat(do_composite, nt),
+            #                         itertools.repeat(do_sum, nt))
+            #
+            #     for ii, out in zip(indices, out_list):
+            #         if do_composite:
+            #             fy, fx = frm_ids[ii]
+            #             composite_map[fy[0]:fy[1],
+            #                           fx[0]:fx[1]] = out['frame_data']
+            #         if do_sum:
+            #             py, px = pos_ids[ii]
+            #             sum_map[py, px] = out['sum_data']
+            # done = indices[-1] + 1
         else:
             try:
                 self.reader = fabio.edfimage.EdfImage()
@@ -422,28 +417,24 @@ class Mapper(object):
 
                 for i, f in enumerate(in_files):
                     if verbose:
-                        msg = '\rProcessing file ...{} of {}'
-                        sys.stdout.write(msg.format(f[-40:], n_files))
+                        msg = '\rProcessing file {} of {}'
+                        sys.stdout.write(msg.format(i, n_files))
                         sys.stdout.flush()
-                    out = self.process_frame(f, do_composite, do_sum)
 
-                    if do_composite:
+                    out = self.process_frame(f)
+                    py, px = pos_ids[i]
+
+                    if self.composite_shape is not None:
                         fy, fx = frm_ids[i]
                         composite_map[fy[0]:fy[1],
-                                      fx[0]:fx[1]] = out['frame_data']
-                    if do_sum:
-                        py, px = pos_ids[i]
-                        sum_map[py, px] = out['sum_data']
-
+                                      fx[0]:fx[1]] = out[0]
+                        sum_map[py, px] = out[1]
+                    else:
+                        sum_map[py, px] = out
             except KeyboardInterrupt:
                 print '\nInterrupted.\n'
                 pass
             done = i
-
-        if do_composite:
-            self.composite_map = composite_map
-        if do_sum:
-            self.sum_map = sum_map
 
         dt = t.stop()
         if verbose:
@@ -452,13 +443,52 @@ class Mapper(object):
             print '\n{} frames processed in {}'.format(done, t.pretty_print(dt))
             print '{} per frame'.format(t.pretty_print(dt/done))
 
-        self.save(basename)
+        # self.save(basename)
 
-        out = []
-        if do_composite:
-            out.append(self.composite_map)
-        if do_sum:
-            out.append(self.sum_map)
+        if composite_map is not None:
+            out = composite_map, sum_map
+        else:
+            out = sum_map
+        return out
+
+    def composite_map(self, in_files,  roi=None, binning=None,
+                      basename=None,  verbose=True, thread=False):
+        """
+
+        Args:
+            in_files:
+            roi:
+            binning:
+            basename:
+            verbose:
+            thread:
+
+        Returns:
+
+        """
+        self.config_box_roi(binning, roi)
+        out = self._process(in_files, basename, verbose, thread)
+        return out
+
+    def circle_map(self, in_files, cen_x, cen_y, radius, width,
+                   basename=None, verbose=True, thread=False):
+        """
+
+        Args:
+            in_files:
+            cen_x:
+            cen_y:
+            radius:
+            width:
+            basename:
+            verbose:
+            thread:
+
+        Returns:
+
+        """
+        self.config_circle_roi(cen_x, cen_y, radius, width)
+        out = self._process(in_files, basename, verbose, thread)
         return out
 
     def save(self, basename=None):
