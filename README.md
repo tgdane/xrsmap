@@ -30,8 +30,7 @@ corresponds to the sum intensity of the selected ROI.
     binning = 16                    # rebinning factor
     roi = (536, 306, 1783, 1553)    # region-of-interest in detector image
     
-    mpr = xrsmap.Mapper(npt_x, npt_y, mask=mask, dummy=0, 
-                        back_files=back_files)
+    mpr = xrsmap.Mapper(npt_x, npt_y, mask=mask, dummy=0, back_files=back_files)
     out = mpr.composite_map(in_files, roi=roi, binning=binning)
     comp_map, sum_map = out
 ```
@@ -47,10 +46,8 @@ units) are specified.
     radius = 584
     width = 32
     
-    mpr = xrsmap.Mapper(npt_x, npt_y, mask=mask, dummy=0, 
-                        back_files=back_files)
-    sum_map = mpr.circle_map(in_files, cen_x, cen_y, radius, width,
-                         basename=None, verbose=True, thread=False)
+    mpr = xrsmap.Mapper(npt_x, npt_y, mask=mask, dummy=0, back_files=back_files)
+    sum_map = mpr.circle_map(in_files, cen_x, cen_y, radius, width)
 ```
 
 Installation
